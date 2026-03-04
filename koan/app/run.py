@@ -1724,6 +1724,11 @@ def _run_skill_mission(
         skill_stdout = "\n".join(stdout_lines)
         skill_stderr = ""
     finally:
+        if proc is not None and proc.stdout is not None:
+            try:
+                proc.stdout.close()
+            except OSError:
+                pass
         if stderr_fh is not None:
             stderr_fh.close()
         if proc is not None and proc.stdout is not None and hasattr(proc.stdout, "close"):
