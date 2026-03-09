@@ -7,6 +7,7 @@ The easiest way to set up Kōan is with the interactive wizard:
 ```bash
 git clone https://github.com/sukria/koan.git
 cd koan
+make setup
 make install
 ```
 
