@@ -619,12 +619,36 @@ def main_loop():
                 elif productive == "idle":
                     consecutive_idle += 1
                     if consecutive_idle == 1:
-                        _notify(
-                            instance,
-                            "💤 No work available — waiting for pending reviews "
-                            "or new missions. Auto-pause in ~30 min.",
-                        )
+                        try:
+                            from app.schedule_manager import is_scheduled_active
+                            schedule_active = is_scheduled_active()
+                        except (ImportError, Exception):
+                            schedule_active = False
+                        if schedule_active:
+                            _notify(
+                                instance,
+                                "💤 No work available — but schedule is active, "
+                                "staying awake for missions.",
+                            )
+                        else:
+                            _notify(
+                                instance,
+                                "💤 No work available — waiting for pending reviews "
+                                "or new missions. Auto-pause in ~30 min.",
+                            )
                     if consecutive_idle >= MAX_CONSECUTIVE_IDLE:
+                        # Check if a schedule window is active — if so, the
+                        # human configured deep_hours or work_hours and the
+                        # agent should stay active, not auto-pause.
+                        try:
+                            from app.schedule_manager import is_scheduled_active
+                            if is_scheduled_active():
+                                if consecutive_idle == MAX_CONSECUTIVE_IDLE:
+                                    log("koan", "Idle timeout reached but schedule is active — staying awake")
+                                continue
+                        except (ImportError, Exception):
+                            pass  # schedule check failed — fall through to pause
+
                         from app.config import get_auto_pause
                         if get_auto_pause():
                             idle_min = consecutive_idle * interval // 60

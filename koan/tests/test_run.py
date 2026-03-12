@@ -4314,6 +4314,89 @@ class TestIdleTimeoutAutoPause:
         # Should NOT have created pause (False doesn't count as idle)
         assert not (koan_root / ".koan-pause").exists()
 
+    @patch("app.run.subprocess.run")
+    @patch("app.run.run_startup", return_value=(5, 60, "koan/"))
+    @patch("app.run.acquire_pidfile")
+    @patch("app.run.release_pidfile")
+    @patch("app.run._run_iteration")
+    def test_idle_timeout_skipped_when_schedule_active(
+        self, mock_iteration, mock_release, mock_acquire,
+        mock_startup, mock_subproc, koan_root,
+    ):
+        """Idle timeout auto-pause is suppressed when schedule (deep/work hours) is active."""
+        from app.run import main_loop
+
+        os.environ["KOAN_ROOT"] = str(koan_root)
+        os.environ["KOAN_PROJECTS"] = f"test:{koan_root}"
+        (koan_root / ".koan-project").write_text("test")
+
+        call_count = [0]
+
+        def iteration_side_effect(**kwargs):
+            call_count[0] += 1
+            if call_count[0] <= 35:
+                return "idle"
+            # Stop after exceeding the threshold by a few iterations
+            (koan_root / ".koan-stop").touch()
+            (koan_root / ".koan-project").write_text("test")
+            return True
+
+        mock_iteration.side_effect = iteration_side_effect
+
+        from app.schedule_manager import ScheduleState
+        active_schedule = ScheduleState(in_deep_hours=True, in_work_hours=False)
+
+        with patch("app.run._notify") as mock_notify, \
+             patch("app.schedule_manager.is_scheduled_active", return_value=True), \
+             patch("app.schedule_manager.get_current_schedule", return_value=active_schedule):
+            main_loop()
+
+        # Should NOT have created pause — schedule is active
+        assert not (koan_root / ".koan-pause").exists()
+
+        # Verify no auto-pause notification was sent
+        notify_msgs = [str(c) for c in mock_notify.call_args_list]
+        assert not any("Auto-paused" in m for m in notify_msgs), (
+            f"Should not auto-pause during active schedule, got: {notify_msgs}"
+        )
+
+    @patch("app.run.subprocess.run")
+    @patch("app.run.run_startup", return_value=(5, 60, "koan/"))
+    @patch("app.run.acquire_pidfile")
+    @patch("app.run.release_pidfile")
+    @patch("app.run._run_iteration")
+    def test_first_idle_shows_schedule_message(
+        self, mock_iteration, mock_release, mock_acquire,
+        mock_startup, mock_subproc, koan_root,
+    ):
+        """First idle iteration shows schedule-aware message when schedule is active."""
+        from app.run import main_loop
+
+        os.environ["KOAN_ROOT"] = str(koan_root)
+        os.environ["KOAN_PROJECTS"] = f"test:{koan_root}"
+        (koan_root / ".koan-project").write_text("test")
+
+        call_count = [0]
+
+        def iteration_side_effect(**kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return "idle"
+            (koan_root / ".koan-stop").touch()
+            (koan_root / ".koan-project").write_text("test")
+            return True
+
+        mock_iteration.side_effect = iteration_side_effect
+
+        with patch("app.run._notify") as mock_notify, \
+             patch("app.schedule_manager.is_scheduled_active", return_value=True):
+            main_loop()
+
+        notify_msgs = [str(c) for c in mock_notify.call_args_list]
+        assert any("schedule is active" in m for m in notify_msgs), (
+            f"Expected schedule-aware idle message, got: {notify_msgs}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Contemplative commit gap fix

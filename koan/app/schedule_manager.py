@@ -252,6 +252,24 @@ def should_suppress_exploration(schedule: ScheduleState) -> bool:
     return schedule.in_work_hours
 
 
+def is_scheduled_active(schedule: Optional[ScheduleState] = None) -> bool:
+    """Check if a schedule window (deep_hours or work_hours) is currently active.
+
+    Used to prevent idle auto-pause during scheduled hours. When the human
+    configures deep_hours or work_hours, the agent should respect those
+    windows and stay active — not give up after an idle timeout.
+
+    Args:
+        schedule: Current schedule state (fetched if not provided).
+
+    Returns:
+        True if currently in deep_hours or work_hours.
+    """
+    if schedule is None:
+        schedule = get_current_schedule()
+    return schedule.in_deep_hours or schedule.in_work_hours
+
+
 def cap_mode_for_schedule(
     budget_mode: str,
     schedule: ScheduleState,
