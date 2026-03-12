@@ -4,6 +4,7 @@ Encapsulates all Telegram-specific logic: sending messages,
 polling updates, chunking, flood protection, and credential validation.
 """
 
+import json
 import os
 import sys
 import threading
@@ -12,7 +13,7 @@ from typing import List, Optional
 
 import requests
 
-from app.messaging.base import DEFAULT_MAX_MESSAGE_SIZE, Message, MessagingProvider, Update
+from app.messaging.base import DEFAULT_MAX_MESSAGE_SIZE, Message, MessagingProvider, Reaction, Update
 from app.messaging import register_provider
 
 
@@ -109,7 +110,10 @@ class TelegramProvider(MessagingProvider):
 
     def poll_updates(self, offset: Optional[int] = None) -> List[Update]:
         """Long-poll the Telegram Bot API for new updates."""
-        params: dict = {"timeout": 30}
+        params: dict = {
+            "timeout": 30,
+            "allowed_updates": json.dumps(["message", "message_reaction"]),
+        }
         if offset is not None:
             params["offset"] = offset
         try:
@@ -135,14 +139,57 @@ class TelegramProvider(MessagingProvider):
                     timestamp=str(msg_data.get("date", "")),
                     raw_data=msg_data,
                 )
+
+            reaction = self._parse_reaction(raw)
+
             updates.append(
                 Update(
                     update_id=raw.get("update_id", 0),
                     message=message,
+                    reaction=reaction,
                     raw_data=raw,
                 )
             )
         return updates
+
+    def _parse_reaction(self, raw: dict) -> Optional[Reaction]:
+        """Parse a message_reaction update into a Reaction object."""
+        reaction_data = raw.get("message_reaction")
+        if not reaction_data:
+            return None
+
+        message_id = reaction_data.get("message_id", 0)
+        timestamp = str(reaction_data.get("date", ""))
+
+        new_emojis = {
+            e.get("emoji", "")
+            for e in reaction_data.get("new_reaction", [])
+            if e.get("type") == "emoji"
+        }
+        old_emojis = {
+            e.get("emoji", "")
+            for e in reaction_data.get("old_reaction", [])
+            if e.get("type") == "emoji"
+        }
+
+        added = new_emojis - old_emojis
+        removed = old_emojis - new_emojis
+
+        if added:
+            return Reaction(
+                message_id=message_id,
+                emoji=next(iter(added)),
+                is_added=True,
+                timestamp=timestamp,
+            )
+        if removed:
+            return Reaction(
+                message_id=message_id,
+                emoji=next(iter(removed)),
+                is_added=False,
+                timestamp=timestamp,
+            )
+        return None
 
     # -- Internal helpers -----------------------------------------------------
 

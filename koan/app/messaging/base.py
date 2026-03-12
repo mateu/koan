@@ -22,10 +22,20 @@ class Message:
 
 
 @dataclass
+class Reaction:
+    """Provider-agnostic reaction representation."""
+    message_id: int
+    emoji: str  # The emoji string (e.g., "👍", "👎", "❤️")
+    is_added: bool  # True = added, False = removed
+    timestamp: str = ""
+
+
+@dataclass
 class Update:
     """Provider-agnostic update from polling."""
     update_id: int
     message: Optional[Message] = None
+    reaction: Optional[Reaction] = None
     raw_data: Dict[str, Any] = field(default_factory=dict)
 
 
