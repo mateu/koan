@@ -26,6 +26,53 @@ from app.language_preference import get_language_instruction
 from app.config import get_model_config
 from app.response_cache import get_format_cache
 
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_ERROR_KEYWORD_RE = re.compile(
+    r"error|failed|exception|denied|unauthorized|forbidden|timeout|"
+    r"timed out|invalid|landlock|sandbox|quota|rate limit|"
+    r"connection reset|connection refused|econnreset|econnrefused",
+    re.IGNORECASE,
+)
+
+
+def _is_cli_noise_line(line: str) -> bool:
+    """Return True when a stderr line looks like provider banner/metadata noise."""
+    lower = line.lower().strip()
+    if not lower:
+        return True
+
+    metadata_prefixes = (
+        "openai codex",
+        "model:",
+        "provider:",
+        "workspace:",
+        "cwd:",
+        "session:",
+        "trace id:",
+        "telemetry:",
+        "thinking...",
+    )
+    if lower.startswith(metadata_prefixes):
+        return True
+
+    # Decorative separators / box-drawing from CLI wrappers.
+    return bool(re.fullmatch(r"[\s=\-─│┌┐└┘├┤┬┴┼•·]+", line))
+
+
+def summarize_cli_error(stderr: str, max_chars: int = 200) -> str:
+    """Extract a concise, actionable stderr summary for fallback logs."""
+    cleaned = _ANSI_ESCAPE_RE.sub("", stderr or "")
+    lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
+    if not lines:
+        return "no stderr output"
+
+    meaningful = [line for line in lines if not _is_cli_noise_line(line)]
+    candidates = meaningful or lines
+    keyword_hits = [line for line in candidates if _ERROR_KEYWORD_RE.search(line)]
+    selected = keyword_hits[:2] if keyword_hits else candidates[-2:]
+    summary = " | ".join(selected)
+    return summary if len(summary) <= max_chars else summary[:max_chars - 3] + "..."
+
 
 def load_soul(instance_dir: Path) -> str:
     """Load Kōan's identity from soul.md.
@@ -203,7 +250,12 @@ def format_message(raw_content: str, soul: str, prefs: str,
         else:
             # Fallback: if Claude fails, return truncated raw content
             # Don't cache fallback results
-            print(f"[format_outbox] Claude formatting failed: {result.stderr[:200]}", file=sys.stderr)
+            error_excerpt = summarize_cli_error(result.stderr or "")
+            print(
+                f"[format_outbox] Claude formatting failed (rc={result.returncode}): "
+                f"{error_excerpt}",
+                file=sys.stderr,
+            )
             return fallback_format(raw_content)
 
     except subprocess.TimeoutExpired:
