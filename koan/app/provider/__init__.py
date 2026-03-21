@@ -199,6 +199,21 @@ def build_full_command(
     )
 
 
+def _raise_cli_invocation_error(stderr: str = "", stdout: str = "") -> None:
+    """Raise RuntimeError with user-facing hints for known CLI failure classes."""
+    from app.cli_errors import build_landlock_hint, is_landlock_failure
+
+    if is_landlock_failure(stdout=stdout, stderr=stderr):
+        print(
+            "[provider] Raw CLI Landlock failure details:\n"
+            f"{stdout}\n{stderr}",
+            file=sys.stderr,
+        )
+        raise RuntimeError(f"CLI invocation failed: {build_landlock_hint()}")
+
+    raise RuntimeError(f"CLI invocation failed: {stderr[:300]}")
+
+
 def run_command(
     prompt: str,
     project_path: str,
@@ -236,8 +251,9 @@ def run_command(
     )
 
     if result.returncode != 0:
-        raise RuntimeError(
-            f"CLI invocation failed: {result.stderr[:300]}"
+        _raise_cli_invocation_error(
+            stderr=result.stderr or "",
+            stdout=result.stdout or "",
         )
 
     from app.claude_step import strip_cli_noise
@@ -305,9 +321,7 @@ def run_command_streaming(
 
     stdout_text = "\n".join(lines)
     if proc.returncode != 0:
-        raise RuntimeError(
-            f"CLI invocation failed: {stderr_text[:300]}"
-        )
+        _raise_cli_invocation_error(stderr=stderr_text, stdout=stdout_text)
 
     # Notify user when max turns ceiling was hit so they know how to raise it
     import re
