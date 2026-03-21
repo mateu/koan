@@ -184,3 +184,13 @@ class TestLandlockDetection:
         hint = build_landlock_hint()
         assert "skip_permissions: true" in hint
         assert "Landlock sandbox initialization failed" in hint
+
+    def test_landlock_hint_includes_root_cause_excerpt(self):
+        stderr = (
+            "error applying legacy Linux sandbox restrictions: "
+            "Sandbox(LandlockRestrict)"
+        )
+        hint = build_landlock_hint(stderr=stderr)
+        assert "Root cause:" in hint
+        assert "Sandbox(LandlockRestrict)" in hint
+        assert "instance/config.yaml" in hint

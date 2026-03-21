@@ -76,13 +76,29 @@ def is_landlock_failure(stdout: str = "", stderr: str = "") -> bool:
     return bool(_LANDLOCK_RE.search(f"{stdout}\n{stderr}"))
 
 
-def build_landlock_hint() -> str:
+def _extract_landlock_excerpt(stdout: str = "", stderr: str = "") -> str:
+    """Extract a short root-cause excerpt for Landlock failures."""
+    combined = "\n".join(part for part in (stdout, stderr) if part).strip()
+    if not combined:
+        return ""
+
+    lines = [line.strip() for line in combined.splitlines() if line.strip()]
+    for line in lines:
+        if _LANDLOCK_RE.search(line):
+            return line[:200]
+    return lines[0][:200]
+
+
+def build_landlock_hint(stdout: str = "", stderr: str = "") -> str:
     """Return user-facing remediation hint for Landlock sandbox failures."""
+    excerpt = _extract_landlock_excerpt(stdout=stdout, stderr=stderr)
+    root_cause = f" Root cause: {excerpt}." if excerpt else ""
     return (
         "Landlock sandbox initialization failed. "
+        f"{root_cause} "
         "If this host does not support Landlock, run in a compatible "
-        "environment or enable `skip_permissions: true` for Codex "
-        "(trusted environments only)."
+        "environment or set `skip_permissions: true` in `instance/config.yaml` "
+        "(Codex `--yolo`, trusted environments only)."
     )
 
 

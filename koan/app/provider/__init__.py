@@ -209,7 +209,10 @@ def _raise_cli_invocation_error(stderr: str = "", stdout: str = "") -> None:
             f"{stdout}\n{stderr}",
             file=sys.stderr,
         )
-        raise RuntimeError(f"CLI invocation failed: {build_landlock_hint()}")
+        raise RuntimeError(
+            "CLI invocation failed: "
+            f"{build_landlock_hint(stdout=stdout, stderr=stderr)}"
+        )
 
     raise RuntimeError(f"CLI invocation failed: {stderr[:300]}")
 

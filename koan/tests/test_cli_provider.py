@@ -1071,12 +1071,16 @@ class TestRunCommand:
             "Sandbox(LandlockRestrict)"
         )
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr=stderr)
-        with pytest.raises(RuntimeError, match="Landlock sandbox initialization failed"):
+        with pytest.raises(RuntimeError) as exc:
             run_command(
                 prompt="analyze this",
                 project_path="/fake/project",
                 allowed_tools=["Read"],
             )
+        msg = str(exc.value)
+        assert "Landlock sandbox initialization failed" in msg
+        assert "Sandbox(LandlockRestrict)" in msg
+        assert "instance/config.yaml" in msg
         captured = capsys.readouterr()
         assert "Raw CLI Landlock failure details" in captured.err
         assert "Sandbox(LandlockRestrict)" in captured.err
