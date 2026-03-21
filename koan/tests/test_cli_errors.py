@@ -2,7 +2,12 @@
 
 import pytest
 
-from app.cli_errors import ErrorCategory, classify_cli_error
+from app.cli_errors import (
+    ErrorCategory,
+    build_landlock_hint,
+    classify_cli_error,
+    is_landlock_failure,
+)
 
 
 class TestClassifyCliError:
@@ -157,3 +162,25 @@ class TestClassifyCliError:
         stderr = "Error: Invalid API key provided. Check your ANTHROPIC_API_KEY."
         result = classify_cli_error(1, stderr=stderr)
         assert result == ErrorCategory.TERMINAL
+
+
+class TestLandlockDetection:
+    """Landlock-specific detection helpers."""
+
+    def test_detects_landlock_restrict_error(self):
+        stderr = (
+            "error applying legacy Linux sandbox restrictions: "
+            "Sandbox(LandlockRestrict)"
+        )
+        assert is_landlock_failure(stderr=stderr) is True
+
+    def test_detects_landlock_in_stdout(self):
+        assert is_landlock_failure(stdout="Sandbox(LandlockRestrict)") is True
+
+    def test_returns_false_for_other_errors(self):
+        assert is_landlock_failure(stderr="connection reset by peer") is False
+
+    def test_landlock_hint_mentions_skip_permissions(self):
+        hint = build_landlock_hint()
+        assert "skip_permissions: true" in hint
+        assert "Landlock sandbox initialization failed" in hint
