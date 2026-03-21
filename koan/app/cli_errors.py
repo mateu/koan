@@ -25,6 +25,11 @@ class ErrorCategory(Enum):
     UNKNOWN = "unknown"
 
 
+_LANDLOCK_PATTERNS = [
+    r"LandlockRestrict",
+    r"legacy\s+Linux\s+sandbox\s+restrictions",
+]
+
 # Patterns indicating transient server/network errors (worth retrying).
 # Matched case-insensitively against combined stdout+stderr.
 _RETRYABLE_PATTERNS = [
@@ -63,6 +68,22 @@ _TERMINAL_PATTERNS = [
 
 _RETRYABLE_RE = re.compile("|".join(_RETRYABLE_PATTERNS), re.IGNORECASE)
 _TERMINAL_RE = re.compile("|".join(_TERMINAL_PATTERNS), re.IGNORECASE)
+_LANDLOCK_RE = re.compile("|".join(_LANDLOCK_PATTERNS), re.IGNORECASE)
+
+
+def is_landlock_failure(stdout: str = "", stderr: str = "") -> bool:
+    """Return True when output matches known Landlock sandbox startup failures."""
+    return bool(_LANDLOCK_RE.search(f"{stdout}\n{stderr}"))
+
+
+def build_landlock_hint() -> str:
+    """Return user-facing remediation hint for Landlock sandbox failures."""
+    return (
+        "Landlock sandbox initialization failed. "
+        "If this host does not support Landlock, run in a compatible "
+        "environment or enable `skip_permissions: true` for Codex "
+        "(trusted environments only)."
+    )
 
 
 def classify_cli_error(

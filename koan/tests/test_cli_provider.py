@@ -1059,6 +1059,28 @@ class TestRunCommand:
                 allowed_tools=["Read"],
             )
 
+    @patch.dict("os.environ", {"KOAN_CLI_PROVIDER": "codex"})
+    @patch("app.cli_exec.run_cli")
+    @patch("app.config.get_model_config", return_value={"chat": "gpt-5-codex", "fallback": ""})
+    def test_landlock_failure_shows_hint_and_logs_raw_error(
+        self, mock_models, mock_run, capsys
+    ):
+        """Landlock startup failure gets actionable hint and raw debug output."""
+        stderr = (
+            "error applying legacy Linux sandbox restrictions: "
+            "Sandbox(LandlockRestrict)"
+        )
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr=stderr)
+        with pytest.raises(RuntimeError, match="Landlock sandbox initialization failed"):
+            run_command(
+                prompt="analyze this",
+                project_path="/fake/project",
+                allowed_tools=["Read"],
+            )
+        captured = capsys.readouterr()
+        assert "Raw CLI Landlock failure details" in captured.err
+        assert "Sandbox(LandlockRestrict)" in captured.err
+
     @patch.dict("os.environ", {"KOAN_CLI_PROVIDER": "claude"})
     @patch("app.cli_exec.run_cli")
     @patch("app.config.get_model_config", return_value={"chat": "sonnet", "fallback": "haiku"})
