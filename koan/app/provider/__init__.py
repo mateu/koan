@@ -211,9 +211,21 @@ def _raise_cli_invocation_error(stderr: str = "", stdout: str = "") -> None:
         )
         raise RuntimeError(f"CLI invocation failed: {build_landlock_hint()}")
 
-    raise RuntimeError(f"CLI invocation failed: {stderr[:300]}")
+    # For non-Landlock failures, include both stderr and stdout (when available)
+    # in the error message, truncated to keep the exception message concise.
+    stderr_str = stderr or ""
+    stdout_str = stdout or ""
 
+    message_parts = []
+    if stderr_str.strip():
+        message_parts.append("stderr:\n" + stderr_str.strip())
+    if stdout_str.strip():
+        message_parts.append("stdout:\n" + stdout_str.strip())
 
+    combined_message = " | ".join(message_parts) if message_parts else "no output captured"
+    truncated_message = combined_message[:300]
+
+    raise RuntimeError(f"CLI invocation failed: {truncated_message}")
 def run_command(
     prompt: str,
     project_path: str,
