@@ -20,10 +20,13 @@ Package structure:
     provider/__init__.py     — Registry, resolution, convenience functions
 """
 
+import logging
 import os
 import subprocess
 import sys
 from typing import List, Optional
+
+log = logging.getLogger(__name__)
 
 # Re-export base class and constants for convenience
 from app.provider.base import (  # noqa: F401
@@ -204,10 +207,10 @@ def _raise_cli_invocation_error(stderr: str = "", stdout: str = "") -> None:
     from app.cli_errors import build_landlock_hint, is_landlock_failure
 
     if is_landlock_failure(stdout=stdout, stderr=stderr):
-        print(
-            "[provider] Raw CLI Landlock failure details:\n"
-            f"{stdout}\n{stderr}",
-            file=sys.stderr,
+        log.debug(
+            "[provider] Landlock failure details (stdout=%r, stderr=%r)",
+            stdout[:500] if stdout else "",
+            stderr[:500] if stderr else "",
         )
         raise RuntimeError(f"CLI invocation failed: {build_landlock_hint()}")
 
