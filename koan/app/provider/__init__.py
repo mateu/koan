@@ -20,10 +20,13 @@ Package structure:
     provider/__init__.py     — Registry, resolution, convenience functions
 """
 
+import logging
 import os
 import subprocess
 import sys
 from typing import List, Optional
+
+log = logging.getLogger(__name__)
 
 # Re-export base class and constants for convenience
 from app.provider.base import (  # noqa: F401
@@ -199,6 +202,33 @@ def build_full_command(
     )
 
 
+def _raise_cli_invocation_error(stderr: str = "", stdout: str = "") -> None:
+    """Raise RuntimeError with user-facing hints for known CLI failure classes."""
+    from app.cli_errors import build_landlock_hint, is_landlock_failure
+
+    if is_landlock_failure(stdout=stdout, stderr=stderr):
+        log.debug(
+            "[provider] Landlock failure details (stdout=%r, stderr=%r)",
+            stdout[:500] if stdout else "",
+            stderr[:500] if stderr else "",
+        )
+        raise RuntimeError(f"CLI invocation failed: {build_landlock_hint()}")
+
+    # For non-Landlock failures, include both stderr and stdout (when available)
+    # in the error message, truncated to keep the exception message concise.
+    stderr_str = stderr or ""
+    stdout_str = stdout or ""
+
+    message_parts = []
+    if stderr_str.strip():
+        message_parts.append("stderr:\n" + stderr_str.strip())
+    if stdout_str.strip():
+        message_parts.append("stdout:\n" + stdout_str.strip())
+
+    combined_message = " | ".join(message_parts) if message_parts else "no output captured"
+    truncated_message = combined_message[:300]
+
+    raise RuntimeError(f"CLI invocation failed: {truncated_message}")
 def run_command(
     prompt: str,
     project_path: str,
@@ -236,8 +266,9 @@ def run_command(
     )
 
     if result.returncode != 0:
-        raise RuntimeError(
-            f"CLI invocation failed: {result.stderr[:300]}"
+        _raise_cli_invocation_error(
+            stderr=result.stderr or "",
+            stdout=result.stdout or "",
         )
 
     from app.claude_step import strip_cli_noise
@@ -305,9 +336,7 @@ def run_command_streaming(
 
     stdout_text = "\n".join(lines)
     if proc.returncode != 0:
-        raise RuntimeError(
-            f"CLI invocation failed: {stderr_text[:300]}"
-        )
+        _raise_cli_invocation_error(stderr=stderr_text, stdout=stdout_text)
 
     # Notify user when max turns ceiling was hit so they know how to raise it
     import re

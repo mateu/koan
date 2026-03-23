@@ -1051,13 +1051,42 @@ class TestRunCommand:
     @patch("app.config.get_model_config", return_value={"chat": "sonnet", "fallback": "haiku"})
     def test_failure_raises_runtime_error(self, mock_models, mock_run):
         """Non-zero exit raises RuntimeError with stderr snippet."""
-        mock_run.return_value = MagicMock(returncode=1, stderr="some error message")
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="some error message")
         with pytest.raises(RuntimeError, match="CLI invocation failed"):
             run_command(
                 prompt="analyze this",
                 project_path="/fake/project",
                 allowed_tools=["Read"],
             )
+
+    @patch.dict("os.environ", {"KOAN_CLI_PROVIDER": "codex"})
+    @patch("app.cli_exec.run_cli")
+    @patch("app.config.get_model_config", return_value={"chat": "gpt-5-codex", "fallback": ""})
+    def test_landlock_failure_shows_hint_and_logs_raw_error(
+        self, mock_models, mock_run
+    ):
+        """Landlock startup failure gets actionable hint and raw debug output."""
+        stderr = (
+            "error applying legacy Linux sandbox restrictions: "
+            "Sandbox(LandlockRestrict)"
+        )
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr=stderr)
+        with patch("app.provider.log") as mock_log:
+            with pytest.raises(RuntimeError, match="Landlock sandbox initialization failed"):
+                run_command(
+                    prompt="analyze this",
+                    project_path="/fake/project",
+                    allowed_tools=["Read"],
+                )
+            mock_log.debug.assert_called_once()
+            call_args = mock_log.debug.call_args
+            # Verify structured format: format string + positional stdout/stderr args
+            fmt_string = call_args.args[0]
+            assert "stdout=%r" in fmt_string
+            assert "stderr=%r" in fmt_string
+            # Verify the stderr content is passed as the second positional arg (truncated to 500)
+            logged_stderr = call_args.args[2]
+            assert logged_stderr == stderr[:500]
 
     @patch.dict("os.environ", {"KOAN_CLI_PROVIDER": "claude"})
     @patch("app.cli_exec.run_cli")

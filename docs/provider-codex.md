@@ -162,6 +162,12 @@ controlled by sandbox policies. Use `skip_permissions: true` (maps to
 `--yolo`) for full access, or the default `--full-auto` for workspace-
 scoped writes.
 
+### "error applying legacy Linux sandbox restrictions: Sandbox(LandlockRestrict)"
+
+This indicates Codex could not initialize Landlock on the current host.
+Run in a Landlock-compatible environment, or set `skip_permissions: true`
+for trusted environments where `--yolo` is acceptable.
+
 ### System prompt not taking effect
 
 Codex does not have a `--append-system-prompt` flag. System prompts
