@@ -78,6 +78,13 @@ class TestGetForkOwner:
     def test_returns_stripped(self, mock):
         assert get_fork_owner("/p") == "myuser"
 
+    @patch(f"{_M}.run_git_strict", return_value="git@github.com:forkuser/repo.git")
+    def test_uses_configured_remote_owner_when_available(self, mock):
+        assert get_fork_owner("/p", remote="myfork") == "forkuser"
+        mock.assert_called_once_with(
+            "remote", "get-url", "myfork", cwd="/p", timeout=15
+        )
+
     @patch(f"{_M}.run_gh", side_effect=RuntimeError("gh not found"))
     def test_error_returns_empty(self, mock):
         assert get_fork_owner("/p") == ""
@@ -181,6 +188,46 @@ class TestSubmitDraftPr:
             kw = mock_pr.call_args[1]
             assert kw["repo"] == "upstream/r"
             assert kw["head"] == "myfork:koan/feat"
+
+    @patch.dict("os.environ", {"KOAN_ROOT": "/koan"})
+    def test_submit_to_repository_repo_and_remote_override(self):
+        config = {
+            "projects": {
+                "proj": {
+                    "path": "/p",
+                    "submit_to_repository": {
+                        "repo": "upstream/repo",
+                        "remote": "fork-remote",
+                    },
+                }
+            }
+        }
+        with patch("app.projects_config.load_projects_config", return_value=config), \
+             patch(f"{_M}.detect_parent_repo", return_value=None), \
+             patch(f"{_M}.get_current_branch", return_value="koan/feat"), \
+             patch(f"{_M}.run_gh", return_value=""), \
+             patch(f"{_M}.get_commit_subjects", return_value=["c1"]), \
+             patch(f"{_M}.run_git_strict", side_effect=["", "git@github.com:forkuser/repo.git"]), \
+             patch(f"{_M}.pr_create", return_value="https://pr/10") as mock_pr:
+            result = submit_draft_pr("/p", "proj", "owner", "repo", "1", "T", "B")
+            assert result == "https://pr/10"
+            kw = mock_pr.call_args[1]
+            assert kw["repo"] == "upstream/repo"
+            assert kw["head"] == "forkuser:koan/feat"
+
+    @patch.dict("os.environ", {"KOAN_ROOT": ""})
+    def test_fork_parent_auto_detect_fallback(self):
+        with patch(f"{_M}.detect_parent_repo", return_value="upstream/repo"), \
+             patch(f"{_M}.get_current_branch", return_value="koan/feat"), \
+             patch(f"{_M}.run_gh", side_effect=["", "forkuser\n"]), \
+             patch(f"{_M}.get_commit_subjects", return_value=["c1"]), \
+             patch(f"{_M}.run_git_strict"), \
+             patch(f"{_M}.pr_create", return_value="https://pr/11") as mock_pr:
+            result = submit_draft_pr("/p", "proj", "owner", "repo", "2", "T", "B")
+            assert result == "https://pr/11"
+            kw = mock_pr.call_args[1]
+            assert kw["repo"] == "upstream/repo"
+            assert kw["head"] == "forkuser:koan/feat"
 
     def test_pr_create_failure_returns_none(self):
         with patch(f"{_M}.get_current_branch", return_value="feat"), \
