@@ -7,6 +7,7 @@ fork detection, PR creation, issue comment).
 
 import logging
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import List, Optional
@@ -20,6 +21,7 @@ from app.github import detect_parent_repo, run_gh, pr_create
 from app.projects_config import resolve_base_branch
 
 logger = logging.getLogger(__name__)
+_GITHUB_REMOTE_RE = re.compile(r"github\.com[:/]([^/]+)/([^/\s.]+?)(?:\.git)?$")
 
 
 def guess_project_name(project_path: str) -> str:
@@ -43,8 +45,52 @@ def get_commit_subjects(project_path: str, base_branch: str = "main") -> List[st
     return _git_get_commit_subjects(cwd=project_path, base_branch=base_branch)
 
 
-def get_fork_owner(project_path: str) -> str:
-    """Return the GitHub owner login of the current repo."""
+def _get_submit_remote(project_name: str) -> str:
+    """Return submit_to_repository.remote for a project, if configured."""
+    from app.projects_config import load_projects_config, get_project_submit_to_repository
+
+    koan_root = os.environ.get("KOAN_ROOT", "")
+    if not koan_root:
+        return ""
+
+    try:
+        config = load_projects_config(koan_root)
+    except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+        logger.debug("Failed to load submit remote config: %s", e)
+        return ""
+
+    if not config:
+        return ""
+
+    submit_cfg = get_project_submit_to_repository(config, project_name)
+    return submit_cfg.get("remote", "")
+
+
+def _parse_owner_from_remote_url(remote_url: str) -> str:
+    """Extract GitHub owner from a git remote URL."""
+    match = _GITHUB_REMOTE_RE.search((remote_url or "").strip())
+    return match.group(1).strip() if match else ""
+
+
+def get_fork_owner(project_path: str, remote: str = "") -> str:
+    """Return GitHub owner login for PR head branch.
+
+    If ``remote`` is provided, owner is inferred from that remote URL first.
+    Falls back to ``gh repo view`` owner lookup.
+    """
+    if remote:
+        try:
+            remote_url = run_git_strict(
+                "remote", "get-url", remote,
+                cwd=project_path, timeout=15,
+            )
+            owner = _parse_owner_from_remote_url(remote_url)
+            if owner:
+                return owner
+        except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+            logger.debug("Failed to get owner from remote '%s': %s", remote, e)
+
+    # Fallback: use gh context owner for the current repo.
     try:
         return run_gh(
             "repo", "view", "--json", "owner", "--jq", ".owner.login",
@@ -166,7 +212,8 @@ def submit_draft_pr(
 
     if target["is_fork"]:
         pr_kwargs["repo"] = target["repo"]
-        fork_owner = get_fork_owner(project_path)
+        submit_remote = _get_submit_remote(project_name)
+        fork_owner = get_fork_owner(project_path, remote=submit_remote)
         if fork_owner:
             pr_kwargs["head"] = f"{fork_owner}:{branch}"
 

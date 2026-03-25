@@ -12,6 +12,7 @@ from app.format_outbox import (
     load_memory_context,
     format_message,
     fallback_format,
+    summarize_cli_error,
 )
 from app.response_cache import _format_cache
 
@@ -111,6 +112,24 @@ class TestFormatForTelegram:
         assert "Raw content" in result
 
     @patch("app.cli_exec.run_cli")
+    def test_nonzero_returncode_logs_compact_actionable_error(self, mock_run, capsys):
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stdout="",
+            stderr=(
+                "OpenAI Codex v0.27.0\n"
+                "model: gpt-5-codex\n"
+                "workspace: /tmp/koan\n"
+                "RuntimeError: permission denied for sandbox profile\n"
+            ),
+        )
+        format_message("raw", "soul", "")
+        captured = capsys.readouterr()
+        assert "rc=1" in captured.err
+        assert "permission denied for sandbox profile" in captured.err
+        assert "OpenAI Codex v0.27.0" not in captured.err
+
+    @patch("app.cli_exec.run_cli")
     def test_fallback_on_empty_stdout(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0, stdout="  \n  ", stderr=""
@@ -134,10 +153,10 @@ class TestFormatForTelegram:
     def test_prompt_includes_soul_and_prefs(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
         format_message("content", "my-soul", "my-prefs")
-        call_args = mock_run.call_args[0][0]
-        prompt = call_args[2]  # ["claude", "-p", prompt]
-        assert "my-soul" in prompt
-        assert "my-prefs" in prompt
+        cmd = mock_run.call_args[0][0]
+        joined = " ".join(str(x) for x in cmd)
+        assert "my-soul" in joined
+        assert "my-prefs" in joined
 
     @patch("app.cli_exec.run_cli")
     def test_prompt_omits_prefs_when_empty(self, mock_run):
@@ -151,10 +170,10 @@ class TestFormatForTelegram:
     def test_prompt_includes_memory_context(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
         format_message("content", "soul", "prefs", memory_context="Session 61: tests")
-        call_args = mock_run.call_args[0][0]
-        prompt = call_args[2]
-        assert "Session 61: tests" in prompt
-        assert "Recent memory context" in prompt
+        cmd = mock_run.call_args[0][0]
+        joined = " ".join(str(x) for x in cmd)
+        assert "Session 61: tests" in joined
+        assert "Recent memory context" in joined
 
     @patch("app.cli_exec.run_cli")
     def test_prompt_omits_memory_when_empty(self, mock_run):
@@ -259,6 +278,21 @@ class TestGetTimeHint:
             mock_dt.now.return_value = fake
             result = _get_time_hint()
         assert "late night" in result.lower()
+
+
+class TestSummarizeCliError:
+    def test_prefers_keyword_lines_and_removes_noise(self):
+        stderr = (
+            "OpenAI Codex v0.27.0\n"
+            "model: gpt-5-codex\n"
+            "workspace: /tmp/koan\n"
+            "Connection reset by peer\n"
+            "request failed with HTTP 502\n"
+        )
+        summary = summarize_cli_error(stderr)
+        assert "HTTP 502" in summary
+        assert "Connection reset" in summary
+        assert "OpenAI Codex" not in summary
 
 
 class TestFormatOutboxCLI:
