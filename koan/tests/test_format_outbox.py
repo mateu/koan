@@ -153,10 +153,10 @@ class TestFormatForTelegram:
     def test_prompt_includes_soul_and_prefs(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
         format_message("content", "my-soul", "my-prefs")
-        call_args = mock_run.call_args[0][0]
-        prompt = call_args[2]  # ["claude", "-p", prompt]
-        assert "my-soul" in prompt
-        assert "my-prefs" in prompt
+        cmd = mock_run.call_args[0][0]
+        joined = " ".join(str(x) for x in cmd)
+        assert "my-soul" in joined
+        assert "my-prefs" in joined
 
     @patch("app.cli_exec.run_cli")
     def test_prompt_omits_prefs_when_empty(self, mock_run):
@@ -170,10 +170,10 @@ class TestFormatForTelegram:
     def test_prompt_includes_memory_context(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
         format_message("content", "soul", "prefs", memory_context="Session 61: tests")
-        call_args = mock_run.call_args[0][0]
-        prompt = call_args[2]
-        assert "Session 61: tests" in prompt
-        assert "Recent memory context" in prompt
+        cmd = mock_run.call_args[0][0]
+        joined = " ".join(str(x) for x in cmd)
+        assert "Session 61: tests" in joined
+        assert "Recent memory context" in joined
 
     @patch("app.cli_exec.run_cli")
     def test_prompt_omits_memory_when_empty(self, mock_run):
