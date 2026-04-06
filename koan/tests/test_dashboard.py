@@ -1132,6 +1132,21 @@ class TestPlansPage:
         data = resp.get_json()
         assert data["plans"] == []
 
+    def test_api_plans_uses_projects_config_without_crashing(self, app_client):
+        """Regression: /api/plans should not 500 when resolving github_url from config."""
+        projects_cfg = {
+            "projects": {
+                "myproject": {"github_url": "https://github.com/owner/repo"}
+            }
+        }
+        with patch("app.utils.get_known_projects", return_value=[("myproject", "/path")]), \
+             patch("app.projects_config.load_projects_config", return_value=projects_cfg), \
+             patch("app.github.run_gh", return_value="[]"):
+            resp = app_client.get("/api/plans")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["plans"] == []
+
     def test_api_plans_skips_projects_without_github_url(self, app_client):
         with patch("app.utils.get_known_projects", return_value=[("myproject", "/some/path")]), \
              patch("app.dashboard._get_project_repo", return_value=None):
